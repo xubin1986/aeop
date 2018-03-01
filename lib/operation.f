@@ -122,7 +122,7 @@ execFile(){
 local script host hosts cmd
 hosts=$1
 script=$2
-cmd=`cat $script`
+cmd=`cat $script|grep -v '#!'`
 execCmd "$hosts" "$cmd" 
 }
 opsTarget(){
