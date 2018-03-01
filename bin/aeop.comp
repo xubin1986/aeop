@@ -1,0 +1,108 @@
+# bash completion for aeop
+#
+## aeop -help
+#Version 1
+
+
+# This file must be updated with any changes to, or additions to the options.
+
+# Could not get numeric value to work for the --stats interval
+# Considered parsing output of -help to complete options
+#set -x
+__getHosts(){
+groups=`ls $groupbase|grep -v default|xargs -n1000`
+hosts=`cat $groupbase/default|awk '{print $1}'|xargs -n10000`
+flows=`ls $AEPATH/data/flow|xargs -n1000`
+if [ -n "$prev1" ] && [ -f $groupbase/$prev1 ]
+then
+    grouphost=`cat $groupbase/$prev1|grep -vP "^\s*$"|xargs -n10000`
+    grouphost_exp=`echo "$grouphost"|sed -r "s/ /$|^/g;s/^/^/;s/$/$/"`
+    groupaddhost=`echo "$hosts"|xargs -n1|grep -vP "$grouphost_exp"|grep -vP "^\s*$"|xargs -n10000`
+fi
+}
+
+__aeop_options()
+{
+local cur prev prev0 prev1 prev2 opts 
+COMPREPLY=()
+cur="${COMP_WORDS[COMP_CWORD]}"
+prev0="${COMP_WORDS[COMP_CWORD-1]}"
+prev1="${COMP_WORDS[COMP_CWORD-2]}"
+prev2="${COMP_WORDS[COMP_CWORD-3]}"
+__getHosts
+if [[ "$prev0" =~ (^| |/)aeop\ *$ ]]
+then
+    opts="-help -list -add -chg -del -check -copyfile -recover -host -group -flow"
+elif [ "$prev0" = -list ]
+then
+    opts=`echo "$groups"|sed -r "s/^/host group /"`
+elif [ "$prev0" = -add -o "$prev0" = -del -o "$prev0" = -check ]
+then
+    if [ "$prev2" = -chg ]
+    then
+        opts="$groupaddhost"
+    else
+        opts="-group -host"
+    fi
+elif [ "$prev1" = -add ]
+then
+    opts="-samepassword"
+elif [ "$prev1" = -group -a "$prev2" = -add ]
+then
+    opts="-host"
+elif [ "$prev0" = -chg ]
+then
+    opts="$groups"
+elif [ "$prev1" = -chg ]
+then
+    opts="-add -rm -rename"
+elif [ "$prev0" = -rm ]
+then
+    opts="$grouphost"
+elif [ "$prev0" = -group ]
+then
+    if [ "$prev1" = -del -o "$prev1" = -check ] || [[ "$prev1" =~ (^| |/)aeop\ *$ ]]
+    then
+        opts="$groups"
+    fi
+elif [ "$prev0" = -host ]
+then
+    if [ "$prev1" = -del -o "$prev1" = -check -o "$prev1" = -recover ] || [[ "$prev1" =~ (^| |/)aeop\ *$ ]]
+    then
+        opts="$hosts"
+    fi  
+elif [ "$prev0" = -copyfile ]
+then
+    opts="-source -target"
+elif [ "$prev1" = -source ]
+then
+    opts="-target"
+elif [ "$prev1" = -target ]
+then
+    opts="-source"
+elif [ "$prev0" = -login ]
+then
+    opts="$hosts"
+elif [ "$prev0" = -recover ]
+then
+    opts="all-lost -host -samepassword"
+elif [ "$prev1" = -recover ]
+then
+    opts="-samepassword"
+elif [ "$prev1" = -host -o "$prev1" = -group ] && [ "$prev2" != -del -a "$prev2" != -check -a "$prev2" != -add ]
+then
+    opts="-cmd -script"
+elif [ "$prev0" = -flow ]
+then
+    opts="$flows"
+else
+    return 0
+fi   
+COMPREPLY=($(compgen -W "$opts" -- ${cur}))
+}
+
+[ -z "$AEPATH" ] && AEPATH=/root/.ae
+groupbase=$AEPATH/data/hosts
+hostpath=$AEPATH/data/hosts/default
+complete -F __aeop_options aeop
+
