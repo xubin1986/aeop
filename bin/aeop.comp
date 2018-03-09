@@ -92,6 +92,9 @@ then
 elif [ "$prev1" = -host -o "$prev1" = -group ] && [ "$prev2" != -del -a "$prev2" != -check -a "$prev2" != -add ]
 then
     opts="-cmd -script"
+elif [ "$prev0" = -deploy ]
+then
+    opts=`ls $groupbase/deploy`
 elif [ "$prev0" = -flow ]
 then
     opts="$flows"

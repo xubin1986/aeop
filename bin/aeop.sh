@@ -65,6 +65,9 @@ case $1 in
     -host|-group)
         opsTarget "$args"
         ;;
+    -deploy)
+        deployTarget "$args"
+        ;;
     -flow)
         flowTarget "$args"
         ;;
