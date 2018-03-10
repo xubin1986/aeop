@@ -44,8 +44,10 @@ ERROR! Usage:
     $script -group Group <-cmd CMD|-script File> 
         Execute command or script on Group.
         
-    $script -deploy Application -host Host1[,Host2,Host3...]
-        Deploy an application to host.
+    $script -deploy Application (-setup|-host Host1[,Host2,Host3...] (-init|-update Element))
+        Setup the properties of an application
+        Clean install an application to host.
+        Update(upgrade or downgrade ) the application
         
     $script -flow Flow
         Execute flow if the flow exists.

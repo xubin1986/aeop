@@ -144,18 +144,23 @@ do
     {
         outfile=/tmp/$PID/outfile.$host
         errorfile=/tmp/$PID/errorfile.$host
+        rcfile=/tmp/$PID/rc.$host
         user=`echo "$hostcontent"|grep -P "(^| )$host( |$)"|awk '{print $2}'`
         checkAuth $host $user
         ret=$?
         if [ $ret -eq 0 ]
         then
             echo "$cmd0" | ssh $user@$host "cat > /tmp/cmd.$host && bash /tmp/cmd.$host;ret=\$? && rm -f /tmp/cmd.$host;exit \$ret" 1>$outfile 2>$errorfile
+            rc=$?
         elif [ $ret -eq 1 ]
         then
             int_exec
+            $rc=$?
         else
             echo -e "Skipped execution on Host $host as it is disconnectd\n"
+            rc=1001
         fi
+        echo "$rc" > $rcfile
         echo >&6
     } &
 done
@@ -164,6 +169,7 @@ for host in $hosts
 do
     out=`cat /tmp/$PID/outfile.$host`
     error=`cat /tmp/$PID/errorfile.$host`
+    rc=`cat /tmp/$PID/rc.$host`
     if [ "$format" = yes ]
     then
         displayFormat
@@ -221,6 +227,85 @@ else
 fi
 }
 
+replaceConfig(){
+local module
+module=$1
+if [ $module = ats ]
+then
+    res="
+[acous_model]
+acous_model1    = anhui;HMM_16K;/opt/IPS/ats/resource/acmod_16KRnn_sms.bin;all
+acous_model2    = anhui;HMM_8KTele;/opt/IPS/ats/resource/acmode_8KTele_sms.bin;all
+
+[lang_model]
+lang_model1 = sms;WFST;/opt/IPS/ats/resource/wfst.bin;all
+lang_model2 = sms;LM;/opt/IPS/ats/resource/gram.bin;all
+lang_model3 = sms;RLM;/opt/IPS/ats/resource/nextg.rnnlmwords.bin;all"
+
+
+}
+
+deployTarget(){
+local module op base host target hostcontent inst_content inst_bin inst_start inst_start_folder inst_start_cmd inst_config inst_base 
+args="$*"
+module=`echo "$args"|awk '{print $1}'`
+hostcontent=`cat $hostpath`
+if echo "$args"|grep -oP " -setup" > /dev/null 2>&1
+then
+    cd $deploybase
+    rm -rf $module
+    touch $module
+    read -p "where does the binary locate? " $base
+    read -p "where does the config file locate? " $config_place
+    read -p "sdsf? " $locate
+    read -p "where does the binary locate? " $locate
+elif echo "$args"|grep -oP " -init" > /dev/null 2>&1
+then
+    inst_content=`cat $deploybase/module`
+    inst_bin=$poolbase/$module.deploy.tar
+    inst_base=`echo "$inst_content"|grep ^bin|awk -F ',,,' '{print $2}'`
+    inst_config=`echo "$inst_content"|grep ^config|awk -F ',,,' '{print "'$inst_base'"/$2}'`
+    inst_config0=`basename $inst_config`
+    inst_start=`echo "$inst_content"|grep ^bin|awk -F ',,,' '{print $3}'`
+    inst_start_folder=`dirname "$inst_start"`
+    inst_start_cmd=`echo "$inst_start"|awk -F '/' '{print $NF}'`
+    
+    args=${args%-init}
+    getArg "$args" host
+    target=${ARGVS[0]}
+    for host in ${target//,/ }
+    do
+        ! echo "$hostcontent"|grep -w $host > /dev/null 2>&1 && echo -e "\nPlease add host $host to AE first.\n" && exit 1
+        scp -rp $inst_bin $host:/tmp/ 
+        execCmd $host "tar -xvpf /tmp/$inst_bin -C /opt/IPS"
+        scp -p $inst_config /tmp/
+        replaceConfig $inst_config0 $module
+        scp -p /tmp/$inst_config0 $host:$inst_config
+        execCmd $host "cd $inst_base/$inst_start_folder;nohup ./$inst_start_cmd > /dev/null 2>&1 &"
+        execCmd $host "ps -ef"|grep "$inst_start_cmd"
+        done
+elif echo "$args"|grep -oP " -update" > /dev/null 2>&1
+then
+    getArg "$args" host,update
+    target=${ARGVS[0]}
+    element=${ARGVS[1]}
+    inst_content=`cat $deploybase/element`
+    ! echo "$inst_content"|grep ^$element > /dev/null 2>&1 && echo "Invalid element $element for application $module" && exit 1
+    if [ $element = bin ]
+    then
+        :
+    elif [ $element = mod ]
+    then
+        :
+    else
+        :
+    fi
+else
+    usage
+    exit 1
+fi
+
+}
 
 flowTarget(){
 local flow flow0 line host cmd flowpass
@@ -272,6 +357,7 @@ if [[ "$source" =~ [a-zA-Z0-9\._-]+:/ ]]
 then
     user=`echo "$hostcontent"|grep -P "(^| )$host( |$)"|awk '{print $2}'`
     checkAuth $host $user &&
+    ! echo "$hostcontent"|grep -w $host > /dev/null 2>&1 && echo -e "\nPlease add host $host to AE first.\n" && exit 1
     scp -rp $user@$source $sourcefile > /dev/null 2>&1
 else
     cp -rp $source $sourcefile

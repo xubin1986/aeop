@@ -1,0 +1,3 @@
+bin,,,/opt/IPS,,,bin/ats -d
+mod,,,resouce
+config,,,bin/ats.cfg
