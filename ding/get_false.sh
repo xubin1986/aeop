@@ -12,14 +12,15 @@ date_display=`date "+%Y-%m-%d %H:%M:%S"`
 
 for host in ${IPS[*]}
 do
-    false_count=`salt-ssh $host -r 'cat /var/log/nginx/post_data_'$date_check'.log | grep false |wc -l'|xargs -n10000|grep -oP "(?<=stdout: )[0-9]+"`
-    if [ -z "$false_count" ]
+    false_count=`salt-ssh $host -r "cat /var/log/nginx/post_data_$date_check.log | grep false |wc -l"`
+    if [ $? -ne 0 ]
     then
         ip='Failed to get ip addr'
         false_count='Failed to get count of failed operation'
         sendinfo
         exit 1
     fi
+    false_count=`echo "$false_count"|xargs -n10000|grep -oP "(?<=stdout: )[0-9]+"`
     if [ "$false_count" = 0 ]
     then
         continue
@@ -33,3 +34,4 @@ do
         sendinfo
     fi
 done
+
