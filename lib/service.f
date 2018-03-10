@@ -31,7 +31,7 @@ ERROR! Usage:
         Distribute files from Source to Target.Source file could be local file or file on a remote system.
         Target could be a host or a group.
         
-    -login Host
+    $script -login Host
         Login Host and do interaction
         
     $script -recover <all-lost|-host Host1,Host2...> [-samepassword]
@@ -43,6 +43,9 @@ ERROR! Usage:
     
     $script -group Group <-cmd CMD|-script File> 
         Execute command or script on Group.
+        
+    $script -deploy Application -host Host1[,Host2,Host3...]
+        Deploy an application to host.
         
     $script -flow Flow
         Execute flow if the flow exists.
@@ -84,31 +87,20 @@ done
 }
 
 checkAuth(){
-local host file content
-file=/tmp/checkhost.$PID
+local host user
 host=$1
 user=$2
-expect << EOF &> $file 
+expect << EOF > /dev/null 2>&1  
 set timeout $TIMEOUT_EXPECT
-spawn ssh $user@$host "ip a s"
+spawn ssh $user@$host "hostname"
 expect {
-    eof {exit 0}
+    "connect to host" {exit 2}
     "word" {exit 1}
-    timeout {exit 2}
+    eof {exit 0}
 }
 expect eof
 EOF
-content=`cat $file`
-rm -f $file
-if echo "$content"|grep -P "\w\w:\w\w:\w\w:\w\w:\w\w" > /dev/null 2>&1
-then
-    return 0
-elif echo "$content"|grep password > /dev/null 2>&1
-then
-    return 1
-else
-    return 2
-fi
+return $?
 }
 
 setAuth(){
@@ -134,5 +126,6 @@ expect {
 }
 expect eof
 EOF
+return $?
 }
 

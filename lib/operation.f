@@ -36,7 +36,7 @@ EOF
 int_exec(){
 local file content ret password
 touch $outfile $errorfile
-file=/tmp/int_exec.$PID
+file=/tmp/int_exec.$PID.$host
 password=`cat $hostpath|grep -P "^$host "|awk '{print $4}'`
 expect << EOF > $file 2>&1
 set timeout $TIMEOUT_EXPECT
@@ -46,7 +46,7 @@ expect {
     "word" {send "$password\r"}
 }
 expect {
-    "#" {send "echo \"$cmd\" > /tmp/cmd.$PID \&\& bash /tmp/cmd.$PID;echo rc=\$? \&\& rm -f /tmp/cmd.$PID;\r"}
+    "#" {send "echo \"$cmd\" > /tmp/cmd.$host \&\& bash /tmp/cmd.$host;echo rc=\$? \&\& rm -f /tmp/cmd.$host;\r"}
     "word" {puts "\nrc=1002";exit 1}
     timeout {puts "\nrc=1003";exit 1}
 }
@@ -56,7 +56,7 @@ expect eof
 EOF
 
 content=`cat $file`
-#rm -f $file
+rm -f $file
 ret=`echo "$content"|grep -oP "(?<=rc=)[0-9]+"|tail -1`
 content=`echo "$content"|grep -A 1000000 "/tmp/cmd.$PID"|grep -B 1000000 -P "^rc=[0-9]+"|sed '1d;$d'`
 if [ "$ret" = 0 ]
@@ -118,13 +118,71 @@ do
 done
 return 0
 }
+
+execCmd_parallel(){
+local cmd cmd0 host hosts rc out error user hostcontent ret profile
+hosts=$1
+cmd=$2
+cmd0=". /etc/profile;$cmd"
+hostcontent=`cat $hostpath`
+mkdir /tmp/$PID
+
+#generate fifo file
+fifo=/tmp/file
+mkfifo $fifo
+exec 6<>$fifo
+rm -f $fifo
+[ -z "$aeop_thread" ] && aeop_thread=20
+for i in `seq $aeop_thread`
+do
+        echo 
+done >&6
+
+for host in $hosts
+do
+    read -u6
+    {
+        outfile=/tmp/$PID/outfile.$host
+        errorfile=/tmp/$PID/errorfile.$host
+        user=`echo "$hostcontent"|grep -P "(^| )$host( |$)"|awk '{print $2}'`
+        checkAuth $host $user
+        ret=$?
+        if [ $ret -eq 0 ]
+        then
+            echo "$cmd0" | ssh $user@$host "cat > /tmp/cmd.$host && bash /tmp/cmd.$host;ret=\$? && rm -f /tmp/cmd.$host;exit \$ret" 1>$outfile 2>$errorfile
+        elif [ $ret -eq 1 ]
+        then
+            int_exec
+        else
+            echo -e "Skipped execution on Host $host as it is disconnectd\n"
+        fi
+        echo >&6
+    } &
+done
+wait
+for host in $hosts
+do
+    out=`cat /tmp/$PID/outfile.$host`
+    error=`cat /tmp/$PID/errorfile.$host`
+    if [ "$format" = yes ]
+    then
+        displayFormat
+    else
+        display
+    fi
+done
+rm -rf /tmp/$PID
+return 0
+}
+
 execFile(){
 local script host hosts cmd
 hosts=$1
 script=$2
 cmd=`cat $script|grep -v '#!'`
-execCmd "$hosts" "$cmd" 
+[ "$aeop_parallel" = yes ] && execCmd_parallel "$hosts" "$cmd" ||  execCmd "$hosts" "$cmd"
 }
+
 opsTarget(){
 local args target hosts host hostcontent format
 args="$*"
@@ -151,7 +209,7 @@ if [[ "$args" =~ -cmd ]]
 then
     getArg "$args" cmd
     echo -e "Command: ${ARGVS[0]}\n"
-    execCmd "$hosts" "${ARGVS[0]}"
+    [ "$aeop_parallel" = yes ] && execCmd_parallel "$hosts" "${ARGVS[0]}" || execCmd "$hosts" "${ARGVS[0]}"
 elif [[ "$args" =~ -script ]]
 then
     getArg "$args" script
@@ -162,6 +220,7 @@ else
     exit 1
 fi
 }
+
 
 flowTarget(){
 local flow flow0 line host cmd flowpass
