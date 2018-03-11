@@ -74,6 +74,30 @@ fi
 return $ret
 }
 
+execCmdOnly(){
+local cmd cmd0 host hosts rc out error depend user hostcontent ret profile
+hosts=$1
+cmd=$2
+depend=$3
+cmd0=". /etc/profile;$cmd"
+hostcontent=`cat $hostpath`
+outfile=/tmp/outfile.$PID
+errorfile=/tmp/errorfile.$PID
+user=`echo "$hostcontent"|grep -P "(^| )$host( |$)"|awk '{print $2}'`
+#! echo "$hostcontent"|grep -P "^$host .* connected" > /dev/null 2>&1 && echo -e "Skipped execution on Host $host as it is disconnectd\n" && continue
+checkAuth $host $user
+ret=$?
+if [ $ret -eq 0 ]
+then
+    echo "$cmd0" | ssh $user@$host "cat > /tmp/cmd.$PID && bash /tmp/cmd.$PID"
+    rc=$?
+else
+    echo -e "Skipped execution on Host $host as it is disconnectd\n"
+    exit 1
+fi
+return $rc
+}
+
 execCmd(){
 local cmd cmd0 host hosts rc out error depend user hostcontent ret profile
 hosts=$1
@@ -277,12 +301,13 @@ then
     do
         ! echo "$hostcontent"|grep -w $host > /dev/null 2>&1 && echo -e "\nPlease add host $host to AE first.\n" && exit 1
         scp -rp $inst_bin $host:/tmp/ 
-        execCmd $host "tar -xvpf /tmp/$inst_bin -C /opt/IPS"
-        scp -p $inst_config /tmp/
-        replaceConfig $inst_config0 $module
+        execCmdOnly $host "tar -xvpf /tmp/$inst_bin -C /opt/IPS"
+        #scp -p $inst_config /tmp/
+        cp $poolbase/$inst_config0 /tmp/
+        replaceConfig /tmp/$inst_config0 $module
         scp -p /tmp/$inst_config0 $host:$inst_config
-        execCmd $host "cd $inst_base/$inst_start_folder;nohup ./$inst_start_cmd > /dev/null 2>&1 &"
-        execCmd $host "ps -ef"|grep "$inst_start_cmd"
+        execCmdOnly $host "cd $inst_base/$inst_start_folder;nohup ./$inst_start_cmd > /dev/null 2>&1 &"
+        execCmdOnly $host "ps -ef"|grep "$inst_start_cmd"
         done
 elif echo "$args"|grep -oP " -update" > /dev/null 2>&1
 then
@@ -290,10 +315,38 @@ then
     target=${ARGVS[0]}
     element=${ARGVS[1]}
     inst_content=`cat $deploybase/element`
+    inst_bin=$poolbase/$module.deploy.tar
+    inst_base=`echo "$inst_content"|grep ^bin|awk -F ',,,' '{print $2}'`
     ! echo "$inst_content"|grep ^$element > /dev/null 2>&1 && echo "Invalid element $element for application $module" && exit 1
     if [ $element = bin ]
     then
-        :
+        inst_start=`echo "$inst_content"|grep ^bin|awk -F ',,,' '{print $3}'`
+        inst_start_folder=`dirname "$inst_start"`
+        inst_start_cmd=`echo "$inst_start"|awk -F '/' '{print $NF}'`
+        for host in ${target//,/ }
+        do
+            execCmdOnly $host "cp -p $inst_config /tmp/"
+            execCmdOnly $host "ps -ef"|grep "$inst_start_cmd" > /tmp/exsit_proce.$PID
+            if cat /tmp/exsit_proce.$PID|grep "$inst_start_cmd" > /dev/null 2>&1
+            then
+                echo "Found process of $module is running,will kill processes first"
+                cat /tmp/exsit_proce.$PID
+                pid=`cat /tmp/exsit_proce.$PID`|awk '{print $2}'|sort -n|sort -u|xargs -n10`
+                execCmdOnly $host "kill -9 $pid"
+                if [ $? -eq 0 ]
+                then
+                    echo "Succesful to stop $module"
+                else
+                    echo "Failed to stop $module"
+                    exit 1
+                fi
+            fi
+            execCmdOnly "rm -rf $inst_base"
+            scp -rp $inst_bin $host:/tmp/
+            execCmdOnly $host "tar -xvpf /tmp/$inst_bin -C /opt/IPS"
+            scp -p /tmp/$inst_config0 $host:$inst_config
+            execCmdOnly $host "cd $inst_base/$inst_start_folder;nohup ./$inst_start_cmd > /dev/null 2>&1 &"
+            execCmdOnly $host "ps -ef"|grep "$inst_start_cmd"            
     elif [ $element = mod ]
     then
         :
