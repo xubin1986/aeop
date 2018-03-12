@@ -6,10 +6,11 @@ curl -k 'https://oapi.dingtalk.com/robot/send?access_token=6efdce2287061845fc08c
 }
 
 IPS=(nginx1 nginx2 nginx3 nginx4) 
-
+record=/root/.get_false
+[ -f $record ] || touch $record
 date_check=`date +%Y%m%d -d '1 day ago'`
 date_display=`date "+%Y-%m-%d %H:%M:%S"`
-
+ 
 for host in ${IPS[*]}
 do
     false_count=`salt-ssh $host -r "cat /var/log/nginx/post_data_$date_check.log | grep false |wc -l"`
@@ -25,11 +26,17 @@ do
     then
         continue
     else
+        previous=`cat $record|grep -oP "(?<=$host:)[0-9]+"|tail -1`
         if [ -n "$previous" ]
         then
             [ $previous -eq $false_count ] && continue
         fi
-        previous=$false_count
+        if cat $record|grep "^host:" > /dev/null 2>&1
+        then
+            sed -i -r "s/$host:[0-9]+/$host:$false_count/" $record
+        else
+            echo "$host:$false_count" >> $record
+        fi
         ip=`salt-ssh $host -r 'ifconfig -a'|xargs -n100000|grep -oP "(?<= addr:)[^ ]+"|grep -v 127.0`
         sendinfo
     fi

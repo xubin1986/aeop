@@ -32,7 +32,7 @@ prev2="${COMP_WORDS[COMP_CWORD-3]}"
 __getHosts
 if [[ "$prev0" =~ (^| |/)aeop\ *$ ]]
 then
-    opts="-help -list -add -chg -del -check -copyfile -recover -host -group -flow"
+    opts="-help -list -add -chg -del -check -copyfile -recover -host -group -flow -deploy"
 elif [ "$prev0" = -list ]
 then
     opts=`echo "$groups"|sed -r "s/^/host group /"`
@@ -67,7 +67,7 @@ then
     fi
 elif [ "$prev0" = -host ]
 then
-    if [ "$prev1" = -del -o "$prev1" = -check -o "$prev1" = -recover ] || [[ "$prev1" =~ (^| |/)aeop\ *$ ]]
+    if [ "$prev1" = -del -o "$prev1" = -check -o "$prev1" = -recover -o "$prev2" = -deploy ] || [[ "$prev1" =~ (^| |/)aeop\ *$ ]]
     then
         opts="$hosts"
     fi  
@@ -94,7 +94,13 @@ then
     opts="-cmd -script"
 elif [ "$prev0" = -deploy ]
 then
-    opts=`ls $groupbase/deploy`
+    opts="ats"
+elif [ "$prev1" = -deploy ]
+then
+    opts="-host -update"
+elif [ "$prev0" = -update ]
+then
+    opts="bin mod config"
 elif [ "$prev0" = -flow ]
 then
     opts="$flows"

@@ -44,12 +44,12 @@ spawn ssh $user@$host
 expect {
     "(yes/no)?" { send "yes\r";exp_continue}
     "word" {send "$password\r"}
-}
+    }
 expect {
     "#" {send "echo \"$cmd\" > /tmp/cmd.$host \&\& bash /tmp/cmd.$host;echo rc=\$? \&\& rm -f /tmp/cmd.$host;\r"}
     "word" {puts "\nrc=1002";exit 1}
     timeout {puts "\nrc=1003";exit 1}
-}
+    }
 expect "#"
 send "exit\r"
 expect eof
@@ -76,7 +76,7 @@ return $ret
 
 execCmdOnly(){
 local cmd cmd0 host hosts rc out error depend user hostcontent ret profile
-hosts=$1
+host=$1
 cmd=$2
 depend=$3
 cmd0=". /etc/profile;$cmd"
@@ -90,12 +90,11 @@ ret=$?
 if [ $ret -eq 0 ]
 then
     echo "$cmd0" | ssh $user@$host "cat > /tmp/cmd.$PID && bash /tmp/cmd.$PID"
-    rc=$?
+    return $?
 else
     echo -e "Skipped execution on Host $host as it is disconnectd\n"
     exit 1
 fi
-return $rc
 }
 
 execCmd(){
@@ -251,113 +250,227 @@ else
 fi
 }
 
-replaceConfig(){
-local module
-module=$1
-if [ $module = ats ]
-then
-    res="
+configtmp(){
+cat << EOF
+[local]
+svc_only                = false
+enable_pmcc             = true
+enable_pmi              = true 
+enable_ldc              = false
+best_lic                = 120
+max_lic                 = 140
+report_lb               = false
+report_arm              = true
+max_audio_time          = 60
+resource_dir            = /opt/IPS/ats/resource
+use_max_best_lic        = true
+nif_filter              = docker
+audio_check             = true
+aufmt_convert                   = true
+
+[vad]
+speech_chgap = 1000
+
+[arm]
+arm_addr        = $ips
+rp_interval     = 5
+
+[rmq]
+server   = 192.168.81.5:10600;192.168.81.6:10600;192.168.81.7:10600 
+topic    = msp_psr_txt_bj
+tag      = hf,gz
+
+[acous_cache]
+db_path = ./acmod_cache
+init_read = true
+max_open_file = 10
+
+[cssp]
+cssp_enable =
+address =
+access_id = de5be11cfba9459c81f2b6067aec3b68 
+access_pwd = 8adbc061965f47d981f39ae7a90fc265
+download_threads= 
+timeout = 
+retry =
+
+[logger]
+file            = /log/engine/ats-sms.log
+title           = iFLY Auto Transcribe Service
+level           = 71
+output          = 1
+flush           = 1
+maxsize         = 
+overwrite       = 0
+maxfile         = 1
+perfthres       = 200
+
+[iatp]
+server_addr             =
+server_port             = 
+keep_alive              = true
+trans_timeout           = 10
+
+[engine]
+beam = 140
+hist = 4000
+
 [acous_model]
-acous_model1    = anhui;HMM_16K;/opt/IPS/ats/resource/acmod_16KRnn_sms.bin;all
-acous_model2    = anhui;HMM_8KTele;/opt/IPS/ats/resource/acmode_8KTele_sms.bin;all
+acous_model1    = anhui;HMM_16K;/opt/IPS/ats/resource/$mod1;all
+acous_model2    = anhui;HMM_8KTele;/opt/IPS/ats/resource/$mod2;all
 
 [lang_model]
-lang_model1 = sms;WFST;/opt/IPS/ats/resource/wfst.bin;all
-lang_model2 = sms;LM;/opt/IPS/ats/resource/gram.bin;all
-lang_model3 = sms;RLM;/opt/IPS/ats/resource/nextg.rnnlmwords.bin;all"
+lang_model1 = sms;WFST;/opt/IPS/ats/resource/$mod3;all
+lang_model2 = sms;LM;/opt/IPS/ats/resource/$mod4;all
+lang_model3 = sms;RLM;/opt/IPS/ats/resource/$mod5;all
 
+[personal_model]
+max_model = 70000
 
+[idss]
+ds_enable = true
+cfg_path  = ./ahsc.cfg
+
+[cslog]
+cs_enable               = true
+host_name               = 127.0.0.1
+port                    = 4545
+EOF
+}
+
+replaceConfig(){
+local ips change
+ips=${target//;/ }
+mod1=`ls $modtmp|grep 16KRnn`
+mod2=`ls $modtmp|grep 8KTele`
+mod3=`ls $modtmp|grep wfst`
+mod4=`ls $modtmp|grep gram`
+mod5=`ls $modtmp|grep nextg`
+configtmp > /tmp/$configshort
+change=$1
+if [ "$change" = yes ]
+then
+    vi /tmp/$configshort
+fi
+}
+
+stopAts(){
+execCmdOnly $host "ps -ef" | grep "$cmd" | grep -v grep > /tmp/exsit_proce.$PID
+if cat /tmp/exsit_proce.$PID|grep "$cmd" > /dev/null 2>&1
+then
+    echo "Found process of ATS is running,will kill processes first"
+    cat /tmp/exsit_proce.$PID
+    echo $pid
+    pid=`cat /tmp/exsit_proce.$PID|awk '{print $2}'|sort -n|sort -u|xargs -n10`
+    execCmdOnly $host "kill -9 $pid"
+    if [ $? -eq 0 ]
+    then
+        echo "Succesful to stop $module for $host"
+    else
+        echo "Failed to stop $module for $host"
+        exit 1
+    fi
+fi
+}            
+
+startAts(){
+echo "Starting process of ATS for $host"
+echo "Checking the process of ATS for $host"
+execCmdOnly $host "cd $cmdbase ;nohup ./$cmd > /dev/null 2>&1 &"
+execCmdOnly $host "ps -ef"|grep -v grep |grep -v /tmp/aeop|grep "$cmd" 
 }
 
 deployTarget(){
-local module op base host target hostcontent inst_content inst_bin inst_start inst_start_folder inst_start_cmd inst_config inst_base 
+local module hostcontent host target
 args="$*"
-module=`echo "$args"|awk '{print $1}'`
+module=ats
 hostcontent=`cat $hostpath`
-if echo "$args"|grep -oP " -setup" > /dev/null 2>&1
+atsbase=/opt/IPS/ats
+cmdbase=/opt/IPS/ats/ats-sms/bin/
+cmd="ats -d"
+bin=`ls -lrt $poolbase|grep tar$|awk '{print "'$poolbase'/" $NF}'`
+binshort=ats.tar
+modtmp=`ls -lrt $poolbase|grep resource$|awk '{print "'$poolbase'/" $NF}'`
+modtarget=$atsbase/resource
+configshort=ats.cfg
+configlong=/opt/IPS/ats/ats-sms/bin/ats.cfg
+
+if echo "$args"|grep -oP " -init" > /dev/null 2>&1
 then
-    cd $deploybase
-    rm -rf $module
-    touch $module
-    read -p "where does the binary locate? " $base
-    read -p "where does the config file locate? " $config_place
-    read -p "sdsf? " $locate
-    read -p "where does the binary locate? " $locate
-elif echo "$args"|grep -oP " -init" > /dev/null 2>&1
-then
-    inst_content=`cat $deploybase/module`
-    inst_bin=$poolbase/$module.deploy.tar
-    inst_base=`echo "$inst_content"|grep ^bin|awk -F ',,,' '{print $2}'`
-    inst_config=`echo "$inst_content"|grep ^config|awk -F ',,,' '{print "'$inst_base'"/$2}'`
-    inst_config0=`basename $inst_config`
-    inst_start=`echo "$inst_content"|grep ^bin|awk -F ',,,' '{print $3}'`
-    inst_start_folder=`dirname "$inst_start"`
-    inst_start_cmd=`echo "$inst_start"|awk -F '/' '{print $NF}'`
-    
     args=${args%-init}
     getArg "$args" host
     target=${ARGVS[0]}
     for host in ${target//,/ }
     do
         ! echo "$hostcontent"|grep -w $host > /dev/null 2>&1 && echo -e "\nPlease add host $host to AE first.\n" && exit 1
-        scp -rp $inst_bin $host:/tmp/ 
-        execCmdOnly $host "tar -xvpf /tmp/$inst_bin -C /opt/IPS"
-        #scp -p $inst_config /tmp/
-        cp $poolbase/$inst_config0 /tmp/
-        replaceConfig /tmp/$inst_config0 $module
-        scp -p /tmp/$inst_config0 $host:$inst_config
-        execCmdOnly $host "cd $inst_base/$inst_start_folder;nohup ./$inst_start_cmd > /dev/null 2>&1 &"
-        execCmdOnly $host "ps -ef"|grep "$inst_start_cmd"
-        done
+        echo "Delivering binary and module files to $host..."
+        execCmdOnly $host "mkdir -p /opt/IPS"
+        scp -rp $bin $host:/tmp/  > /dev/null 2>&1
+        execCmdOnly $host "tar -xvpf /tmp/$binshort -C /opt/IPS" > /dev/null 2>&1
+        echo "Generating config file..."
+        replaceConfig
+        scp -p /tmp/$configshort $host:$configlong > /dev/null 2>&1
+        startAts
+    done
+    
 elif echo "$args"|grep -oP " -update" > /dev/null 2>&1
 then
     getArg "$args" host,update
     target=${ARGVS[0]}
     element=${ARGVS[1]}
-    inst_content=`cat $deploybase/element`
-    inst_bin=$poolbase/$module.deploy.tar
-    inst_base=`echo "$inst_content"|grep ^bin|awk -F ',,,' '{print $2}'`
-    ! echo "$inst_content"|grep ^$element > /dev/null 2>&1 && echo "Invalid element $element for application $module" && exit 1
-    if [ $element = bin ]
-    then
-        inst_start=`echo "$inst_content"|grep ^bin|awk -F ',,,' '{print $3}'`
-        inst_start_folder=`dirname "$inst_start"`
-        inst_start_cmd=`echo "$inst_start"|awk -F '/' '{print $NF}'`
-        for host in ${target//,/ }
-        do
-            execCmdOnly $host "cp -p $inst_config /tmp/"
-            execCmdOnly $host "ps -ef"|grep "$inst_start_cmd" > /tmp/exsit_proce.$PID
-            if cat /tmp/exsit_proce.$PID|grep "$inst_start_cmd" > /dev/null 2>&1
-            then
-                echo "Found process of $module is running,will kill processes first"
-                cat /tmp/exsit_proce.$PID
-                pid=`cat /tmp/exsit_proce.$PID`|awk '{print $2}'|sort -n|sort -u|xargs -n10`
-                execCmdOnly $host "kill -9 $pid"
-                if [ $? -eq 0 ]
-                then
-                    echo "Succesful to stop $module"
-                else
-                    echo "Failed to stop $module"
-                    exit 1
-                fi
-            fi
-            execCmdOnly "rm -rf $inst_base"
-            scp -rp $inst_bin $host:/tmp/
-            execCmdOnly $host "tar -xvpf /tmp/$inst_bin -C /opt/IPS"
-            scp -p /tmp/$inst_config0 $host:$inst_config
-            execCmdOnly $host "cd $inst_base/$inst_start_folder;nohup ./$inst_start_cmd > /dev/null 2>&1 &"
-            execCmdOnly $host "ps -ef"|grep "$inst_start_cmd"            
-    elif [ $element = mod ]
+    host0=`echo ${target//,/ }|awk '{print $1}'`
+    if execCmdOnly $host0 "ls /opt/IPS"|grep ats > /dev/null 2>&1
     then
         :
     else
-        :
+        echo "ATS has not been deployed yet."
+        exit 1
+    fi
+    if [ $element = bin ]
+    then
+        for host in ${target//,/ }
+        do
+            execCmdOnly $host "cp -p $configlong /tmp/"
+            stopAts
+            echo "Updating binary..."
+            execCmdOnly $host "rm -rf $atsbase"
+            scp -rp $bin $host:/tmp/ > /dev/null 2>&1
+            execCmdOnly $host "tar -xvpf /tmp/$binshort -C /opt/IPS" > /dev/null 2>&1
+            echo "Replacing config file..."
+            execCmdOnly $host "rm -f $configlong;cp -p /tmp/$configshort $configlong"
+            startAts
+        done
+    elif [ $element = mod ]
+    then
+        ! [ -f $inst_mod ] && echo "Missing module file." && exit 1
+        for host in ${target//,/ }
+        do
+            stopAts
+            execCmdOnly $host "rm -rf $modtarget"
+            scp -rp $modtmp $host:$modtarget > /dev/null 2>&1
+            replaceConfig
+            echo "Generating config file..."
+            scp -p /tmp/$configshort $host:$configlong > /dev/null 2>&1
+            startAts
+        done
+    else
+        for host in ${target//,/ }
+        do
+            stopAts
+        done
+        host0=`echo ${target//,/ }|awk '{print $1}'`
+        scp -p $host0:$configlong /tmp/ > /dev/null 2>&1
+        vi /tmp/$configshort
+        for host in ${target//,/ }
+        do
+            scp -p /tmp/$configshort $host0:$configlong > /dev/null 2>&1
+            startAts
+        done
     fi
 else
     usage
     exit 1
 fi
-
 }
 
 flowTarget(){

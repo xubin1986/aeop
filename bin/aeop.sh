@@ -14,6 +14,7 @@ fi
 hostpath=$AEPATH/data/hosts/default
 groupbase=$AEPATH/data/hosts
 flowbase=$AEPATH/data/flow
+poolbase=$AEPATH/data/pool
 PID=$$
 
 #import config
