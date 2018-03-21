@@ -1,5 +1,17 @@
 #!/usr/bin/expect
 set user [lindex $argv 0 ]
 set host [lindex $argv 1 ]
+set password [lindex $argv 2 ]
 spawn ssh $user@$host
-interact
+expect {
+    "(yes/no)?" {send "yes\r";exp_continue}
+    "word" {send "$password\r"
+            expect {
+                "word" {puts "\n\nError! Password is wrong! Please re-add $host\n";exit 1}
+                "#" { interact }
+                "~" { interact }
+                }
+        }
+    "#" { interact }
+    "~" { interact }
+  }

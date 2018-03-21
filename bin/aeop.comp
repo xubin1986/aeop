@@ -101,6 +101,10 @@ then
 elif [ "$prev0" = -update ]
 then
     opts="bin mod config"
+elif [ "$prev0" = -mod ]
+then
+    modtmp=`ls -lrt $poolbase|grep resource$|awk '{print "'$poolbase'/" $NF}'`
+    opts=`ls $modtmp`    
 elif [ "$prev0" = -flow ]
 then
     opts="$flows"
@@ -113,5 +117,6 @@ COMPREPLY=($(compgen -W "$opts" -- ${cur}))
 [ -z "$AEPATH" ] && AEPATH=/root/.ae
 groupbase=$AEPATH/data/hosts
 hostpath=$AEPATH/data/hosts/default
+poolbase=$AEPATH/data/pool
 complete -F __aeop_options aeop
 

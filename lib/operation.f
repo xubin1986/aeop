@@ -38,7 +38,7 @@ local file content ret password
 touch $outfile $errorfile
 file=/tmp/int_exec.$PID.$host
 password=`cat $hostpath|grep -P "^$host "|awk '{print $4}'`
-expect << EOF > $file 2>&1
+expect << EOF |sed "s///g" > $file 2>&1
 set timeout $TIMEOUT_EXPECT
 spawn ssh $user@$host
 expect {
@@ -58,7 +58,7 @@ EOF
 content=`cat $file`
 rm -f $file
 ret=`echo "$content"|grep -oP "(?<=rc=)[0-9]+"|tail -1`
-content=`echo "$content"|grep -A 1000000 "/tmp/cmd.$PID"|grep -B 1000000 -P "^rc=[0-9]+"|sed '1d;$d'`
+content=`echo "$content"|grep -A 1000000 "/tmp/cmd.$host"|grep -B 1000000 -P "^rc=[0-9]+"|sed '1d;$d'`
 if [ "$ret" = 0 ]
 then
     echo "$content" > $outfile
@@ -178,7 +178,7 @@ do
         elif [ $ret -eq 1 ]
         then
             int_exec
-            $rc=$?
+            rc=$?
         else
             echo -e "Skipped execution on Host $host as it is disconnectd\n"
             rc=1001
@@ -253,7 +253,7 @@ fi
 configtmp(){
 cat << EOF
 [local]
-svc_only                = false
+svc_only                = true
 enable_pmcc             = true
 enable_pmi              = true 
 enable_ldc              = false
@@ -306,7 +306,7 @@ maxfile         = 1
 perfthres       = 200
 
 [iatp]
-server_addr             =
+server_addr             = $localip
 server_port             = 
 keep_alive              = true
 trans_timeout           = 10
@@ -340,7 +340,8 @@ EOF
 
 replaceConfig(){
 local ips change
-ips=${target//;/ }
+ips=`echo ${target//;/ }|sed "s/123/146/"`
+localip=`echo $host|sed "s/123/146/"`
 mod1=`ls $modtmp|grep 16KRnn`
 mod2=`ls $modtmp|grep 8KTele`
 mod3=`ls $modtmp|grep wfst`
@@ -381,7 +382,7 @@ execCmdOnly $host "ps -ef"|grep -v grep |grep -v /tmp/aeop|grep "$cmd"
 }
 
 deployTarget(){
-local module hostcontent host target
+local module hostcontent host target mod element
 args="$*"
 module=ats
 hostcontent=`cat $hostpath`
@@ -403,10 +404,13 @@ then
     for host in ${target//,/ }
     do
         ! echo "$hostcontent"|grep -w $host > /dev/null 2>&1 && echo -e "\nPlease add host $host to AE first.\n" && exit 1
-        echo "Delivering binary and module files to $host..."
+        execCmdOnly $host "ps -ef" | grep "ats -d"|grep -v grep > /dev/null 2>&1 && echo "ATS has been deployed!" && exit 1
+        echo "Delivering binary to $host..."
         execCmdOnly $host "mkdir -p /opt/IPS"
         scp -rp $bin $host:/tmp/  > /dev/null 2>&1
         execCmdOnly $host "tar -xvpf /tmp/$binshort -C /opt/IPS" > /dev/null 2>&1
+        echo "Delivering module files to $host..."
+        scp -rp $modtmp $host:$modtarget  > /dev/null 2>&1
         echo "Generating config file..."
         replaceConfig
         scp -p /tmp/$configshort $host:$configlong > /dev/null 2>&1
@@ -415,9 +419,10 @@ then
     
 elif echo "$args"|grep -oP " -update" > /dev/null 2>&1
 then
-    getArg "$args" host,update
+    echo "$args"|grep -oP " -mod" > /dev/null 2>&1 && getArg "$args" host,update,mod || getArg "$args" host,update
     target=${ARGVS[0]}
     element=${ARGVS[1]}
+    mod=${ARGVS[2]}
     host0=`echo ${target//,/ }|awk '{print $1}'`
     if execCmdOnly $host0 "ls /opt/IPS"|grep ats > /dev/null 2>&1
     then
@@ -442,12 +447,17 @@ then
         done
     elif [ $element = mod ]
     then
-        ! [ -f $inst_mod ] && echo "Missing module file." && exit 1
         for host in ${target//,/ }
         do
             stopAts
-            execCmdOnly $host "rm -rf $modtarget"
-            scp -rp $modtmp $host:$modtarget > /dev/null 2>&1
+            echo "Delivering module files to $host..."
+            if [ -f $modtmp/$mod ]
+            then
+                scp -rp $modtmp/$mod $host:$modtarget > /dev/null 2>&1
+            else
+                execCmdOnly $host "rm -rf $modtarget"
+                scp -rp $modtmp $host:$modtarget > /dev/null 2>&1
+            fi
             replaceConfig
             echo "Generating config file..."
             scp -p /tmp/$configshort $host:$configlong > /dev/null 2>&1
@@ -548,7 +558,7 @@ else
     done
     hosts=${targethost//,/ }
 fi
-
+ 
 #transfer file to targets
 echo 
 for host in $hosts
@@ -562,9 +572,10 @@ rm -rf $sourcefile
 echo
 }
 login(){
-local host user
+local host user password
 host=$1
 user=`cat $hostpath|grep -P "(^| )$host( |$)"|awk '{print $2}'`
+password=`cat $hostpath|grep -P "(^| )$host( |$)"|awk '{print $4}'`
 [ -z "$user" ] && echo -e "\nPlease add host $host to AE first!\n" && exit 1
-interact.exp $user $host
+interact.exp $user $host "$password"
 }
