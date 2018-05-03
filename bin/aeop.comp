@@ -114,7 +114,7 @@ fi
 COMPREPLY=($(compgen -W "$opts" -- ${cur}))
 }
 
-[ -z "$AEPATH" ] && AEPATH=/root/.ae
+[ -z "$AEPATH" ] && AEPATH=~/.ae
 groupbase=$AEPATH/data/hosts
 hostpath=$AEPATH/data/hosts/default
 poolbase=$AEPATH/data/pool
