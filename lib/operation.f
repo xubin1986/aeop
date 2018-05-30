@@ -46,11 +46,11 @@ expect {
     "word" {send "$password\r"}
     }
 expect {
-    "#" {send "echo \"$cmd\" > /tmp/cmd.$host \&\& bash /tmp/cmd.$host;echo rc=\$? \&\& rm -f /tmp/cmd.$host;\r"}
+    -re "#|~" {send "echo \"$cmd\" > /tmp/cmd.$host \&\& bash /tmp/cmd.$host;echo rc=\$? \&\& rm -f /tmp/cmd.$host;\r"}
     "word" {puts "\nrc=1002";exit 1}
     timeout {puts "\nrc=1003";exit 1}
     }
-expect "#"
+expect -re "#|~"
 send "exit\r"
 expect eof
 EOF
