@@ -126,7 +126,7 @@ do
     if [ $rc = 1001 ]
     then
         out=''
-        error='Skipped execution on Host $host as it is disconnectd'
+        error="Skipped execution on Host $host as it is disconnectd"
     else
         out=`cat $outfile`
         error=`cat $errorfile`
