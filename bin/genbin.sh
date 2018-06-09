@@ -16,7 +16,7 @@ poolbase=\$AEPATH/data/pool
 deploybase=\$AEPATH/data/deploy
 PID=\$\$
 TIMEOUT_SSH=60
-TIMEOUT_EXPECT=5
+TIMEOUT_EXPECT=10
 mkdir -p \$groupbase \$flowbase \$deploybase \$poolbase
 touch \$hostpath
 EOF
