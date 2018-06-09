@@ -121,12 +121,16 @@ do
         int_exec
         rc=$?
     else
-        echo -e "Skipped execution on Host $host as it is disconnectd\n"
         rc=1001
-        continue
     fi
-    out=`cat $outfile`
-    error=`cat $errorfile`
+    if [ $rc = 1001 ]
+    then
+        out=''
+        error='Skipped execution on Host $host as it is disconnectd'
+    else
+        out=`cat $outfile`
+        error=`cat $errorfile`
+    fi
     rm -f $outfile $errorfile
     if [ "$depend" = yes ]
     then
@@ -180,7 +184,8 @@ do
             int_exec
             rc=$?
         else
-            echo -e "Skipped execution on Host $host as it is disconnectd\n"
+            echo > $outfile
+            echo "Skipped execution on Host $host as it is disconnectd" > $errorfile
             rc=1001
         fi
         echo "$rc" > $rcfile

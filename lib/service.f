@@ -99,6 +99,7 @@ expect {
     "connect to host" {exit 2}
     "word" {exit 1}
     eof {exit 0}
+    timeout {exit 2}
 }
 expect eof
 EOF
